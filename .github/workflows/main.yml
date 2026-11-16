@@ -27,20 +27,18 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.3'
+          flutter-version: '3.24.3'
           channel: 'stable'
           cache: true
 
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install "flet>=0.25.2" yt-dlp pyinstaller
+          pip install flet yt-dlp
 
-      - name: Build APK
-        env:
-          CI: "true"
+      - name: Build APK without Prompts
         run: |
-          flet build apk
+          python -c "import subprocess; subprocess.run(['flet', 'build', 'apk'], input=b'y\n')"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
