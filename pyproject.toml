@@ -2,7 +2,7 @@
 name = "youtube-downloader"
 version = "1.0.0"
 dependencies = [
-    "flet==0.24.1",
+    "flet==0.25.2",
     "yt-dlp",
 ]
 
