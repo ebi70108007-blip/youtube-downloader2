@@ -34,15 +34,15 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install "flet>=0.25.2" yt-dlp
+          pip install flet==0.25.2 yt-dlp
 
       - name: Accept Android Licenses
         run: |
           yes | flutter doctor --android-licenses || true
 
-      - name: Build APK
+      - name: Build APK without Prompts
         run: |
-          flet build apk
+          python -c "import subprocess; subprocess.run(['flet', 'build', 'apk'], input=b'y\n')"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
