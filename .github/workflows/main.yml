@@ -36,6 +36,10 @@ jobs:
           pip install --upgrade pip
           pip install "flet==0.24.1" yt-dlp
 
+      - name: Accept Android Licenses
+        run: |
+          yes | flutter doctor --android-licenses || true
+
       - name: Build APK
         run: |
           flet build apk
