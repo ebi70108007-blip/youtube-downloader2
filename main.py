@@ -17,10 +17,6 @@ def get_download_folder():
     return tempfile.gettempdir()
 
 
-def get_cookie_path():
-    return os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
-
-
 def get_format_string(quality_choice):
     if quality_choice == "360p":
         return "18/best[height<=360][ext=mp4]/best[height<=360]/best"
@@ -49,6 +45,13 @@ def create_option(key_val, text_val):
     return ft.dropdown.Option(key=key_val, text=text_val)
 
 
+def clean_youtube_url(raw_url):
+    url = raw_url.strip()
+    if "/shorts/" in url or "youtu.be/" in url:
+        return url.split("?")[0]
+    return url
+
+
 def main(page: ft.Page):
     page.title = "دانلودر سریع یوتیوب"
     page.theme_mode = ft.ThemeMode.DARK
@@ -68,14 +71,6 @@ def main(page: ft.Page):
         expand=True,
     )
 
-    cookie_input = ft.TextField(
-        label="متن کوکی Netscape (اختیاری برای رفع ارور ربات)",
-        multiline=True,
-        min_lines=1,
-        max_lines=3,
-        width=320,
-    )
-
     status_text = ft.Text(
         value="آماده برای دانلود",
         size=14,
@@ -91,27 +86,7 @@ def main(page: ft.Page):
         except Exception:
             pass
 
-    def save_cookie_text(e):
-        raw_cookie = cookie_input.value
-        if not raw_cookie or not raw_cookie.strip():
-            status_text.value = "کادر کوکی خالی است."
-            page.update()
-            return
-        try:
-            c_path = get_cookie_path()
-            header = "# Netscape HTTP Cookie File\n"
-            content = raw_cookie.strip()
-            if not content.startswith("# Netscape"):
-                content = header + content
-            with open(c_path, "w", encoding="utf-8") as f_obj:
-                f_obj.write(content + "\n")
-            status_text.value = "کوکی با موفقیت ذخیره شد!"
-        except Exception as err:
-            status_text.value = f"خطا در ذخیره کوکی: {err}"
-        page.update()
-
     paste_btn = create_button("Paste", paste_link)
-    cookie_btn = create_button("ذخیره کوکی", save_cookie_text)
 
     url_row = ft.Row(
         controls=[url_input, paste_btn],
@@ -173,21 +148,22 @@ def main(page: ft.Page):
             "noplaylist": True,
             "nocheckcertificate": True,
             "geo_bypass": True,
+            "source_address": "0.0.0.0",
             "progress_hooks": [progress_hook],
             "extractor_args": {
                 "youtube": {
                     "player_client": [
-                        "tv_embedded",
+                        "ios",
                         "android_vr",
-                        "mweb",
+                        "tv_embedded",
+                    ],
+                    "player_skip": [
+                        "webpage",
+                        "configs",
                     ],
                 }
             },
         }
-
-        c_path = get_cookie_path()
-        if os.path.exists(c_path):
-            ydl_opts["cookiefile"] = c_path
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -211,10 +187,7 @@ def main(page: ft.Page):
             page.update()
             return
 
-        clean_url = raw_url.strip().split("?")[0]
-        if "watch" in raw_url:
-            clean_url = raw_url.strip()
-
+        clean_url = clean_youtube_url(raw_url)
         download_btn.disabled = True
         progress_bar.visible = True
         progress_bar.value = None
@@ -234,8 +207,6 @@ def main(page: ft.Page):
         title_text,
         url_row,
         quality_dropdown,
-        cookie_input,
-        cookie_btn,
         download_btn,
         progress_bar,
         status_text,
