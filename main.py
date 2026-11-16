@@ -3,7 +3,7 @@ import tempfile
 import threading
 
 import flet as ft
-import yt_dlp
+from pytubefix import YouTube
 
 
 def get_download_folder():
@@ -17,14 +17,15 @@ def get_download_folder():
     return tempfile.gettempdir()
 
 
-def get_format_string(quality_choice):
-    if quality_choice == "360p":
-        return "18/best[height<=360][ext=mp4]/best[height<=360]/best"
-    if quality_choice == "720p":
-        return "22/best[height<=720][ext=mp4]/best[ext=mp4]/best"
-    if quality_choice == "audio":
-        return "140/bestaudio[ext=m4a]/bestaudio/best"
-    return "best[ext=mp4]/best"
+def clean_youtube_url(raw_url):
+    url = raw_url.strip()
+    if "/shorts/" in url:
+        video_id = url.split("/shorts/")[1].split("?")[0]
+        return f"https://www.youtube.com/watch?v={video_id}"
+    if "youtu.be/" in url:
+        video_id = url.split("youtu.be/")[1].split("?")[0]
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return url
 
 
 def create_button(label, on_click_fn):
@@ -43,13 +44,6 @@ def create_option(key_val, text_val):
     if hasattr(ft, "DropdownOption"):
         return ft.DropdownOption(key=key_val, text=text_val)
     return ft.dropdown.Option(key=key_val, text=text_val)
-
-
-def clean_youtube_url(raw_url):
-    url = raw_url.strip()
-    if "/shorts/" in url or "youtu.be/" in url:
-        return url.split("?")[0]
-    return url
 
 
 def main(page: ft.Page):
@@ -100,8 +94,7 @@ def main(page: ft.Page):
         options=[
             create_option("360p", "کیفیت کم حجم (360p)"),
             create_option("720p", "کیفیت متوسط (720p)"),
-            create_option("best", "بهترین کیفیت ممکن"),
-            create_option("audio", "فقط صدا (M4A)"),
+            create_option("audio", "فقط صوت (MP3/M4A)"),
         ],
     )
 
@@ -111,63 +104,37 @@ def main(page: ft.Page):
         visible=False,
     )
 
-    def progress_hook(d):
-        if d.get("status") == "downloading":
-            total = d.get("total_bytes") or d.get(
-                "total_bytes_estimate"
-            )
-            downloaded = d.get("downloaded_bytes", 0)
-            if total and total > 0:
-                ratio = downloaded / total
-                progress_bar.value = ratio
-                percent = int(ratio * 100)
-                mb_done = downloaded / (1024 * 1024)
-                mb_total = total / (1024 * 1024)
-                msg = (
-                    f"در حال دانلود: {percent}% "
-                    f"({mb_done:.1f} از {mb_total:.1f} مگابایت)"
-                )
-                status_text.value = msg
-                page.update()
-        elif d.get("status") == "finished":
-            progress_bar.value = 1.0
-            status_text.value = "در حال نهایی‌سازی فایل..."
-            page.update()
-
     def download_worker(video_url, quality_val):
         save_dir = get_download_folder()
-        out_template = os.path.join(
-            save_dir,
-            "%(title).50s.%(ext)s",
-        )
-        fmt_str = get_format_string(quality_val)
-
-        ydl_opts = {
-            "format": fmt_str,
-            "outtmpl": out_template,
-            "noplaylist": True,
-            "nocheckcertificate": True,
-            "geo_bypass": True,
-            "source_address": "0.0.0.0",
-            "progress_hooks": [progress_hook],
-            "extractor_args": {
-                "youtube": {
-                    "player_client": [
-                        "ios",
-                        "android_vr",
-                        "tv_embedded",
-                    ],
-                    "player_skip": [
-                        "webpage",
-                        "configs",
-                    ],
-                }
-            },
-        }
-
         try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([video_url])
+            yt = YouTube(video_url)
+            status_text.value = f"در حال دانلود: {yt.title[:30]}..."
+            page.update()
+
+            if quality_val == "audio":
+                stream = yt.streams.get_audio_only()
+            elif quality_val == "720p":
+                stream = (
+                    yt.streams.filter(
+                        res="720p",
+                        progressive=True,
+                    ).first()
+                    or yt.streams.get_highest_resolution()
+                )
+            else:
+                stream = (
+                    yt.streams.filter(
+                        res="360p",
+                        progressive=True,
+                    ).first()
+                    or yt.streams.get_lowest_resolution()
+                )
+
+            if not stream:
+                stream = yt.streams.get_highest_resolution()
+
+            stream.download(output_path=save_dir)
+
             progress_bar.visible = False
             status_text.value = (
                 f"دانلود با موفقیت انجام شد!\n"
@@ -175,7 +142,7 @@ def main(page: ft.Page):
             )
         except Exception as err:
             progress_bar.visible = False
-            status_text.value = f"خطا: {err}"
+            status_text.value = f"خطا در دانلود: {err}"
         finally:
             download_btn.disabled = False
             page.update()
@@ -191,7 +158,7 @@ def main(page: ft.Page):
         download_btn.disabled = True
         progress_bar.visible = True
         progress_bar.value = None
-        status_text.value = "در حال استخراج حجم و مشخصات ویدیو..."
+        status_text.value = "در حال اتصال به یوتیوب..."
         page.update()
 
         worker = threading.Thread(
