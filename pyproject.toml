@@ -1,0 +1,12 @@
+[project]
+name = "youtube-downloader"
+version = "1.0.0"
+dependencies = [
+    "flet==0.24.1",
+    "yt-dlp",
+]
+
+[tool.flet.android.permission]
+"android.permission.INTERNET" = true
+"android.permission.WRITE_EXTERNAL_STORAGE" = true
+"android.permission.READ_EXTERNAL_STORAGE" = true
