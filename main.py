@@ -1,4 +1,5 @@
 import os
+import tempfile
 import threading
 
 import flet as ft
@@ -13,7 +14,11 @@ def get_download_folder():
     win_dir = os.path.join(home_dir, "Downloads")
     if os.path.exists(win_dir):
         return win_dir
-    return os.getcwd()
+    return tempfile.gettempdir()
+
+
+def get_cookie_path():
+    return os.path.join(tempfile.gettempdir(), "yt_cookies.txt")
 
 
 def get_format_string(quality_choice):
@@ -63,6 +68,20 @@ def main(page: ft.Page):
         expand=True,
     )
 
+    cookie_input = ft.TextField(
+        label="متن کوکی Netscape (اختیاری برای رفع ارور ربات)",
+        multiline=True,
+        min_lines=1,
+        max_lines=3,
+        width=320,
+    )
+
+    status_text = ft.Text(
+        value="آماده برای دانلود",
+        size=14,
+        text_align=ft.TextAlign.CENTER,
+    )
+
     def paste_link(e):
         try:
             clip_text = page.get_clipboard()
@@ -72,7 +91,27 @@ def main(page: ft.Page):
         except Exception:
             pass
 
+    def save_cookie_text(e):
+        raw_cookie = cookie_input.value
+        if not raw_cookie or not raw_cookie.strip():
+            status_text.value = "کادر کوکی خالی است."
+            page.update()
+            return
+        try:
+            c_path = get_cookie_path()
+            header = "# Netscape HTTP Cookie File\n"
+            content = raw_cookie.strip()
+            if not content.startswith("# Netscape"):
+                content = header + content
+            with open(c_path, "w", encoding="utf-8") as f_obj:
+                f_obj.write(content + "\n")
+            status_text.value = "کوکی با موفقیت ذخیره شد!"
+        except Exception as err:
+            status_text.value = f"خطا در ذخیره کوکی: {err}"
+        page.update()
+
     paste_btn = create_button("Paste", paste_link)
+    cookie_btn = create_button("ذخیره کوکی", save_cookie_text)
 
     url_row = ft.Row(
         controls=[url_input, paste_btn],
@@ -95,12 +134,6 @@ def main(page: ft.Page):
         width=320,
         value=0,
         visible=False,
-    )
-
-    status_text = ft.Text(
-        value="آماده برای دانلود",
-        size=14,
-        text_align=ft.TextAlign.CENTER,
     )
 
     def progress_hook(d):
@@ -144,24 +177,17 @@ def main(page: ft.Page):
             "extractor_args": {
                 "youtube": {
                     "player_client": [
+                        "tv_embedded",
                         "android_vr",
-                        "ios",
-                        "web_embedded",
-                    ],
-                    "player_skip": [
-                        "webpage",
-                        "configs",
+                        "mweb",
                     ],
                 }
             },
-            "http_headers": {
-                "User-Agent": (
-                    "Mozilla/5.0 (Linux; Android 14) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/126.0.0.0 Mobile Safari/537.36"
-                ),
-            },
         }
+
+        c_path = get_cookie_path()
+        if os.path.exists(c_path):
+            ydl_opts["cookiefile"] = c_path
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -185,7 +211,10 @@ def main(page: ft.Page):
             page.update()
             return
 
-        clean_url = raw_url.strip()
+        clean_url = raw_url.strip().split("?")[0]
+        if "watch" in raw_url:
+            clean_url = raw_url.strip()
+
         download_btn.disabled = True
         progress_bar.visible = True
         progress_bar.value = None
@@ -205,6 +234,8 @@ def main(page: ft.Page):
         title_text,
         url_row,
         quality_dropdown,
+        cookie_input,
+        cookie_btn,
         download_btn,
         progress_bar,
         status_text,
