@@ -46,6 +46,20 @@ def create_option(key_val, text_val):
     return ft.dropdown.Option(key=key_val, text=text_val)
 
 
+def pick_stream(yt_obj, quality_val):
+    if quality_val == "audio":
+        return yt_obj.streams.get_audio_only()
+    if quality_val == "720p":
+        return (
+            yt_obj.streams.filter(res="720p", progressive=True).first()
+            or yt_obj.streams.get_highest_resolution()
+        )
+    return (
+        yt_obj.streams.filter(res="360p", progressive=True).first()
+        or yt_obj.streams.get_lowest_resolution()
+    )
+
+
 def main(page: ft.Page):
     page.title = "دانلودر سریع یوتیوب"
     page.theme_mode = ft.ThemeMode.DARK
@@ -106,46 +120,53 @@ def main(page: ft.Page):
 
     def download_worker(video_url, quality_val):
         save_dir = get_download_folder()
-        try:
-            yt = YouTube(video_url)
-            status_text.value = f"در حال دانلود: {yt.title[:30]}..."
-            page.update()
+        clients = [
+            "WEB",
+            "MWEB",
+            "IOS",
+            "ANDROID_VR",
+            "WEB_EMBED",
+            "TV_EMBED",
+        ]
+        last_error = None
+        success = False
 
-            if quality_val == "audio":
-                stream = yt.streams.get_audio_only()
-            elif quality_val == "720p":
-                stream = (
-                    yt.streams.filter(
-                        res="720p",
-                        progressive=True,
-                    ).first()
-                    or yt.streams.get_highest_resolution()
+        for client_name in clients:
+            try:
+                status_text.value = (
+                    f"تلاش برای اتصال با کلاینت {client_name}..."
                 )
-            else:
-                stream = (
-                    yt.streams.filter(
-                        res="360p",
-                        progressive=True,
-                    ).first()
-                    or yt.streams.get_lowest_resolution()
+                page.update()
+
+                yt = YouTube(video_url, client=client_name)
+                stream = pick_stream(yt, quality_val)
+                if not stream:
+                    stream = yt.streams.get_highest_resolution()
+
+                status_text.value = (
+                    f"در حال دانلود ({client_name}): "
+                    f"{yt.title[:25]}..."
                 )
+                page.update()
 
-            if not stream:
-                stream = yt.streams.get_highest_resolution()
+                stream.download(output_path=save_dir)
+                success = True
+                break
+            except Exception as err:
+                last_error = err
+                continue
 
-            stream.download(output_path=save_dir)
-
-            progress_bar.visible = False
+        progress_bar.visible = False
+        if success:
             status_text.value = (
                 f"دانلود با موفقیت انجام شد!\n"
                 f"محل ذخیره: {save_dir}"
             )
-        except Exception as err:
-            progress_bar.visible = False
-            status_text.value = f"خطا در دانلود: {err}"
-        finally:
-            download_btn.disabled = False
-            page.update()
+        else:
+            status_text.value = f"خطا در دانلود: {last_error}"
+
+        download_btn.disabled = False
+        page.update()
 
     def start_download(e):
         raw_url = url_input.value
