@@ -6,15 +6,18 @@ import flet as ft
 from pytubefix import YouTube
 
 
-def get_download_folder():
-    android_dir = "/storage/emulated/0/Download"
-    if os.path.exists(android_dir) and os.access(android_dir, os.W_OK):
-        return android_dir
+def get_save_dirs():
+    dirs = []
+    android_pub = "/storage/emulated/0/Download"
+    if os.path.exists(android_pub):
+        dirs.append(android_pub)
     home_dir = os.path.expanduser("~")
     win_dir = os.path.join(home_dir, "Downloads")
     if os.path.exists(win_dir):
-        return win_dir
-    return tempfile.gettempdir()
+        dirs.append(win_dir)
+    dirs.append(home_dir)
+    dirs.append(tempfile.gettempdir())
+    return dirs
 
 
 def clean_youtube_url(raw_url):
@@ -25,6 +28,8 @@ def clean_youtube_url(raw_url):
     if "youtu.be/" in url:
         video_id = url.split("youtu.be/")[1].split("?")[0]
         return f"https://www.youtube.com/watch?v={video_id}"
+    if "&" in url and "watch?v=" in url:
+        return url.split("&")[0]
     return url
 
 
@@ -52,12 +57,25 @@ def pick_stream(yt_obj, quality_val):
     if quality_val == "720p":
         return (
             yt_obj.streams.filter(res="720p", progressive=True).first()
-            or yt_obj.streams.get_highest_resolution()
+            or yt_obj.streams.filter(progressive=True).last()
         )
     return (
         yt_obj.streams.filter(res="360p", progressive=True).first()
-        or yt_obj.streams.get_lowest_resolution()
+        or yt_obj.streams.filter(progressive=True).first()
     )
+
+
+def save_stream_safely(stream):
+    last_err = None
+    for folder in get_save_dirs():
+        try:
+            os.makedirs(folder, exist_ok=True)
+            file_path = stream.download(output_path=folder)
+            return file_path
+        except Exception as err:
+            last_err = err
+            continue
+    raise RuntimeError(f"Save error: {last_err}")
 
 
 def main(page: ft.Page):
@@ -81,8 +99,9 @@ def main(page: ft.Page):
 
     status_text = ft.Text(
         value="آماده برای دانلود",
-        size=14,
+        size=13,
         text_align=ft.TextAlign.CENTER,
+        selectable=True,
     )
 
     def paste_link(e):
@@ -108,7 +127,7 @@ def main(page: ft.Page):
         options=[
             create_option("360p", "کیفیت کم حجم (360p)"),
             create_option("720p", "کیفیت متوسط (720p)"),
-            create_option("audio", "فقط صوت (MP3/M4A)"),
+            create_option("audio", "فقط صوت (M4A)"),
         ],
     )
 
@@ -119,23 +138,19 @@ def main(page: ft.Page):
     )
 
     def download_worker(video_url, quality_val):
-        save_dir = get_download_folder()
         clients = [
+            "IOS",
+            "ANDROID",
             "WEB",
             "MWEB",
-            "IOS",
-            "ANDROID_VR",
-            "WEB_EMBED",
-            "TV_EMBED",
+            "WEB_CREATOR",
         ]
-        last_error = None
-        success = False
+        errors_log = []
+        saved_file = None
 
         for client_name in clients:
             try:
-                status_text.value = (
-                    f"تلاش برای اتصال با کلاینت {client_name}..."
-                )
+                status_text.value = f"بررسی کلاینت {client_name}..."
                 page.update()
 
                 yt = YouTube(video_url, client=client_name)
@@ -143,27 +158,25 @@ def main(page: ft.Page):
                 if not stream:
                     stream = yt.streams.get_highest_resolution()
 
-                status_text.value = (
-                    f"در حال دانلود ({client_name}): "
-                    f"{yt.title[:25]}..."
-                )
+                status_text.value = f"در حال دانلود ({client_name})..."
                 page.update()
 
-                stream.download(output_path=save_dir)
-                success = True
+                saved_file = save_stream_safely(stream)
                 break
             except Exception as err:
-                last_error = err
+                short_err = str(err)[:65]
+                errors_log.append(f"{client_name}: {short_err}")
                 continue
 
         progress_bar.visible = False
-        if success:
+        if saved_file:
             status_text.value = (
                 f"دانلود با موفقیت انجام شد!\n"
-                f"محل ذخیره: {save_dir}"
+                f"فایل: {saved_file}"
             )
         else:
-            status_text.value = f"خطا در دانلود: {last_error}"
+            joined_errs = "\n".join(errors_log)
+            status_text.value = f"جزئیات خطاها:\n{joined_errs}"
 
         download_btn.disabled = False
         page.update()
